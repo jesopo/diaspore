@@ -17,6 +17,7 @@ RE_NETJOIN = re_compile(r"^\*{3} Notice -- Netjoin (?P<near>\S+) <-> (?P<far>\S+
 RE_CLICONN = re_compile(r"^\*{3} Notice -- Client connecting: (?P<nick>\S+) ")
 RE_CLIEXIT = re_compile(r"^\*{3} Notice -- Client exiting: (?P<nick>\S+) ")
 
+
 @dataclass
 class ServerDetails:
     name: str
@@ -24,6 +25,7 @@ class ServerDetails:
     seen: Optional[datetime] = None
     pings: int = 0
     users: int = 0
+
 
 class Server(BaseServer):
     def __init__(self, bot: BaseBot, name: str, config: Config):
