@@ -22,9 +22,11 @@ RE_CLIEXIT = re_compile(r"^\*{3} Notice -- Client exiting: (?P<nick>\S+) ")
 class ServerDetails:
     name: str
     hops: int
-    seen: Optional[datetime] = None
     pings: int = 0
     users: int = 0
+
+    last_ping: Optional[datetime] = None
+    last_conn: Optional[datetime] = None
 
 
 class Server(BaseServer):
@@ -96,7 +98,7 @@ class Server(BaseServer):
             server = self._links[self._server_index(server_name)]
 
             server.pings -= 1
-            server.seen = datetime.utcnow()
+            server.last_ping = datetime.utcnow()
 
             if server.pings == 1:
                 await self._log(f"INFO: {server.name} caught up")
@@ -107,7 +109,7 @@ class Server(BaseServer):
             server = self._links[self._server_index(server_name)]
 
             server.users = int(line.params[1])
-            server.seen = datetime.utcnow()
+            server.last_ping = datetime.utcnow()
 
         elif (
             line.command == "NOTICE"
@@ -118,16 +120,16 @@ class Server(BaseServer):
 
             # snote!
 
+            server_name = line.source
+            server = self._links[self._server_index(server_name)]
+
             message = line.params[1]
 
             if (p_cliconn := RE_CLICONN.search(message)) is not None:
-                server_name = line.source
-                server = self._links[self._server_index(server_name)]
+                server.last_conn = datetime.utcnow()
                 server.users += 1
 
             elif (p_cliexit := RE_CLIEXIT.search(message)) is not None:
-                server_name = line.source
-                server = self._links[self._server_index(server_name)]
                 server.users -= 1
 
             elif (p_netsplit := RE_NETSPLIT.search(message)) is not None:
@@ -147,7 +149,7 @@ class Server(BaseServer):
 
                 near = self._links[self._server_index(near_name)]
                 far = ServerDetails(far_name, near.hops + 1)
-                far.seen = datetime.utcnow()
+                far.last_ping = datetime.utcnow()
 
                 self._links.append(far)
                 self._links.sort(key=attrgetter("hops", "name"))
