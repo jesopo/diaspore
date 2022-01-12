@@ -41,6 +41,9 @@ class Server(BaseServer):
 
     async def _send_pings(self):
         for i, server in enumerate(self._links):
+            if server.name in self._config.ignore:
+                continue
+
             await self.send(build("TIME", [server.name]))
             server.pings += 1
 

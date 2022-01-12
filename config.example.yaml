@@ -2,6 +2,8 @@ server: irc.libera.chat:+6697
 nickname: diaspore
 password: diaspore:hunter2
 channel: "##diaspore"
+ignore:
+  - services.
 
 sasl:
   username: diaspore
