@@ -111,6 +111,8 @@ class Server(BaseServer):
                 if self._has_links:
                     self._links.pop(self._server_index(far_name))
 
+                await self._log(f"WARN: {far_name} split from {near_name}")
+
             elif (p_netjoin := RE_NETJOIN.search(message)) is not None:
                 near_name = p_netjoin.group("near")
                 far_name = p_netjoin.group("far")
@@ -121,6 +123,8 @@ class Server(BaseServer):
 
                 self._links.append(far)
                 self._links.sort(key=attrgetter("hops", "name"))
+
+                await self._log(f"INFO: {far_name} joined to {near_name}")
 
     def line_preread(self, line: Line):
         print(f"< {line.format()}")
