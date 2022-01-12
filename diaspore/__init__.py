@@ -103,15 +103,18 @@ class Server(BaseServer):
                 near_name = p_netsplit.group("near")
                 far_name = p_netsplit.group("far")
 
-                near = self._links[self._server_index(near_name)]
-                self._links.append(ServerDetails(far_name, near.hops + 1))
-                self._links.sort(key=attrgetter("hops", "name"))
+                self._links.pop(self._server_index(far_name))
 
             elif (p_netjoin := RE_NETJOIN.search(message)) is not None:
                 near_name = p_netjoin.group("near")
                 far_name = p_netjoin.group("far")
 
-                self._links.pop(self._server_index(far_name))
+                near = self._links[self._server_index(near_name)]
+                far = ServerDetails(far_name, near.hops + 1)
+                far.seen = datetime.utcnow()
+
+                self._links.append(far)
+                self._links.sort(key=attrgetter("hops", "name"))
 
     def line_preread(self, line: Line):
         print(f"< {line.format()}")
