@@ -14,7 +14,8 @@ from .util import oper_up, read_links
 
 RE_NETSPLIT = re_compile(r"^\*{3} Notice -- Netsplit (?P<near>\S+) <-> (?P<far>\S+) ")
 RE_NETJOIN = re_compile(r"^\*{3} Notice -- Netjoin (?P<near>\S+) <-> (?P<far>\S+) ")
-
+RE_CLICONN = re_compile(r"^\*{3} Notice -- Client connecting: (?P<nick>\S+) ")
+RE_CLIEXIT = re_compile(r"^\*{3} Notice -- Client exiting: (?P<nick>\S+) ")
 
 @dataclass
 class ServerDetails:
@@ -22,7 +23,7 @@ class ServerDetails:
     hops: int
     seen: Optional[datetime] = None
     pings: int = 0
-
+    users: int = 0
 
 class Server(BaseServer):
     def __init__(self, bot: BaseBot, name: str, config: Config):
@@ -50,6 +51,10 @@ class Server(BaseServer):
             if server.pings == 3:
                 await self._log(f"WARN: {server.name} failed to check in twice")
 
+    async def _send_lusers(self):
+        for server in self._links:
+            await self.send(build("LUSERS", ["*", server.name]))
+
     async def every_ten_seconds(self):
         # this might hit before we've read /links
         if self._has_links:
@@ -75,10 +80,13 @@ class Server(BaseServer):
             await oper_up(self, oper_name, oper_file, oper_pass)
 
         elif line.command == RPL_YOUREOPER:
+            # F - remote cliconns
+            # c - local cliconns
             # s - netsplit snotes
-            await self.send(build("MODE", [self.nickname, "-s+s", "+s"]))
+            await self.send(build("MODE", [self.nickname, "-s+s", "+Fcs"]))
             await self._read_links()
             self._has_links = True
+            await self._send_lusers()
 
         elif line.command == "391" and line.source is not None:
             # RPL_TIME
@@ -91,6 +99,14 @@ class Server(BaseServer):
             if server.pings == 1:
                 await self._log(f"INFO: {server.name} caught up")
 
+        elif line.command == "265" and line.source is not None and self._has_links:
+            # RPL_LOCALUSERS
+            server_name = line.source
+            server = self._links[self._server_index(server_name)]
+
+            server.users = int(line.params[1])
+            server.seen = datetime.utcnow()
+
         elif (
             line.command == "NOTICE"
             and line.params[0] == "*"
@@ -102,7 +118,17 @@ class Server(BaseServer):
 
             message = line.params[1]
 
-            if (p_netsplit := RE_NETSPLIT.search(message)) is not None:
+            if (p_cliconn := RE_CLICONN.search(message)) is not None:
+                server_name = line.source
+                server = self._links[self._server_index(server_name)]
+                server.users += 1
+
+            elif (p_cliexit := RE_CLIEXIT.search(message)) is not None:
+                server_name = line.source
+                server = self._links[self._server_index(server_name)]
+                server.users -= 1
+
+            elif (p_netsplit := RE_NETSPLIT.search(message)) is not None:
                 near_name = p_netsplit.group("near")
                 far_name = p_netsplit.group("far")
 
