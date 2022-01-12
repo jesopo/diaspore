@@ -25,7 +25,7 @@ class ServerDetails:
     pings: int = 0
     users: int = 0
 
-    last_ping: Optional[datetime] = None
+    last_pong: Optional[datetime] = None
     last_conn: Optional[datetime] = None
 
 
@@ -98,7 +98,7 @@ class Server(BaseServer):
             server = self._links[self._server_index(server_name)]
 
             server.pings -= 1
-            server.last_ping = datetime.utcnow()
+            server.last_pong = datetime.utcnow()
 
             if server.pings == 1:
                 await self._log(f"INFO: {server.name} caught up")
@@ -109,7 +109,7 @@ class Server(BaseServer):
             server = self._links[self._server_index(server_name)]
 
             server.users = int(line.params[1])
-            server.last_ping = datetime.utcnow()
+            server.last_pong = datetime.utcnow()
 
         elif (
             line.command == "NOTICE"
@@ -149,7 +149,7 @@ class Server(BaseServer):
 
                 near = self._links[self._server_index(near_name)]
                 far = ServerDetails(far_name, near.hops + 1)
-                far.last_ping = datetime.utcnow()
+                far.last_pong = datetime.utcnow()
 
                 self._links.append(far)
                 self._links.sort(key=attrgetter("hops", "name"))
