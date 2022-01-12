@@ -103,7 +103,10 @@ class Server(BaseServer):
                 near_name = p_netsplit.group("near")
                 far_name = p_netsplit.group("far")
 
-                self._links.pop(self._server_index(far_name))
+                # unlikely, but we could get a netsplit snote before we're done
+                # parsing /links
+                if self._has_links:
+                    self._links.pop(self._server_index(far_name))
 
             elif (p_netjoin := RE_NETJOIN.search(message)) is not None:
                 near_name = p_netjoin.group("near")
