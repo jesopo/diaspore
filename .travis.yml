@@ -1,0 +1,12 @@
+language: python
+cache: pip
+python:
+  - "3.8"
+  - "3.9"
+install:
+  - pip3 install mypy black types-PyYAML -r requirements.txt
+before-script:
+  - pip3 freeze
+script:
+  - mypy diaspore
+  - python3 -m black diaspore --check
