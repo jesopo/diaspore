@@ -1,0 +1,13 @@
+server: irc.libera.chat:+6697
+nickname: diaspore
+password: diaspore:hunter2
+channel: "##diaspore"
+
+sasl:
+  username: diaspore
+  password: hunter3
+
+oper:
+  name: diaspore
+  file: ~/oper.key
+  pass: hunter4
