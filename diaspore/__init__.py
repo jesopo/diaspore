@@ -1,8 +1,7 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
-from operator import attrgetter
 from re import compile as re_compile
-from typing import List, Optional
+from typing import Dict, Optional, Set
 
 from irctokens import build, Line
 from ircrobots import Bot as BaseBot
@@ -20,13 +19,14 @@ RE_CLIEXIT = re_compile(r"^\*{3} Notice -- Client exiting: (?P<nick>\S+) ")
 
 @dataclass
 class ServerDetails:
-    name: str
     hops: int
     pings: int = 0
-    users: int = 0
+    users: int = -1
 
     last_pong: Optional[datetime] = None
     last_conn: Optional[datetime] = None
+
+    downlinks: Set[str] = field(default_factory=set)
 
 
 class Server(BaseServer):
@@ -34,7 +34,7 @@ class Server(BaseServer):
         super().__init__(bot, name)
 
         self._config = config
-        self._links: List[ServerDetails] = []
+        self._servers: Dict[str, ServerDetails] = {}
         self._has_links = False
 
     def set_throttle(self, rate: int, time: float):
@@ -45,40 +45,40 @@ class Server(BaseServer):
         await self.send(build("PRIVMSG", [self._config.channel, text]))
 
     async def _send_pings(self):
-        for i, server in enumerate(self._links):
-            if server.name in self._config.ignore:
+        for server_name, server in self._servers.items():
+            if server_name in self._config.ignore:
                 continue
 
-            await self.send(build("TIME", [server.name]))
+            await self.send(build("TIME", [server_name]))
+
+            if server.pings == 2:
+                await self._log(f"WARN: {server_name} failed to check in twice")
             server.pings += 1
 
-            if server.pings == 3:
-                await self._log(f"WARN: {server.name} failed to check in twice")
-
     async def _send_lusers(self):
-        for server in self._links:
-            await self.send(build("LUSERS", ["*", server.name]))
+        for server_name, server in self._servers.items():
+            # only LUSERS servers who we've not yet got an LUSERS for
+            if server.users == -1:
+                await self.send(build("LUSERS", ["*", server_name]))
 
     async def every_ten_seconds(self):
         # this might hit before we've read /links
         if self._has_links:
             await self._send_pings()
 
-    def _server_index(self, server_name: str) -> int:
-        for i, server in enumerate(self._links):
-            if server.name == server_name:
-                return i
-        else:
-            raise ValueError(f"unknown server name {server_name}")
-
     async def _read_links(self):
-        links: List[ServerDetails] = []
-        for server_name, server_hops in await read_links(self):
-            links.append(ServerDetails(server_name, server_hops))
-        self._links = links
+        for server_name, uplink_name in await read_links(self):
+            if server_name in self._servers:
+                # seen this server on a previous /links
+                continue
+            else:
+                uplink = self._servers[uplink_name]
+                self._servers[server_name] = ServerDetails(uplink.hops + 1)
+                uplink.downlinks.add(server_name)
 
     async def line_read(self, line: Line):
-        if line.command == RPL_WELCOME:
+        if line.command == RPL_WELCOME and line.source is not None:
+            self._servers[line.source] = ServerDetails(0)
             await self.send(build("MODE", [self.nickname, "+g"]))
             oper_name, oper_file, oper_pass = self._config.oper
             await oper_up(self, oper_name, oper_file, oper_pass)
@@ -94,20 +94,16 @@ class Server(BaseServer):
 
         elif line.command == "391" and line.source is not None:
             # RPL_TIME
-            server_name = line.source
-            server = self._links[self._server_index(server_name)]
-
+            server = self._servers[line.source]
             server.pings -= 1
             server.last_pong = datetime.utcnow()
 
             if server.pings == 1:
-                await self._log(f"INFO: {server.name} caught up")
+                await self._log(f"INFO: {line.source} caught up")
 
         elif line.command == "265" and line.source is not None and self._has_links:
             # RPL_LOCALUSERS
-            server_name = line.source
-            server = self._links[self._server_index(server_name)]
-
+            server = self._servers[line.source]
             server.users = int(line.params[1])
             server.last_pong = datetime.utcnow()
 
@@ -116,43 +112,59 @@ class Server(BaseServer):
             and line.params[0] == "*"
             and line.source is not None
             and not "!" in line.source
+            and self.registered
         ):
 
             # snote!
 
-            server_name = line.source
-            server = self._links[self._server_index(server_name)]
-
+            server = self._servers[line.source]
             message = line.params[1]
 
-            if (p_cliconn := RE_CLICONN.search(message)) is not None:
+            if RE_CLICONN.search(message) and not server.users == -1:
                 server.last_conn = datetime.utcnow()
                 server.users += 1
 
-            elif (p_cliexit := RE_CLIEXIT.search(message)) is not None:
+            elif RE_CLIEXIT.search(message) and not server.users == -1:
                 server.users -= 1
 
-            elif (p_netsplit := RE_NETSPLIT.search(message)) is not None:
+            elif (
+                p_netsplit := RE_NETSPLIT.search(message)
+            ) is not None and self._has_links:
+
                 near_name = p_netsplit.group("near")
                 far_name = p_netsplit.group("far")
 
-                # unlikely, but we could get a netsplit snote before we're done
-                # parsing /links
-                if self._has_links:
-                    self._links.pop(self._server_index(far_name))
+                near = self._servers[near_name]
+                far = self._servers.pop(far_name)
+                near.downlinks.remove(far_name)
 
-                await self._log(f"WARN: {far_name} split from {near_name}")
+                affected: Set[str] = set()
+                downlinks = list(far.downlinks)
+                while downlinks:
+                    downlink_name = downlinks.pop(0)
+                    affected.add(downlink_name)
 
-            elif (p_netjoin := RE_NETJOIN.search(message)) is not None:
+                    downlink = self._servers[downlink_name]
+                    downlinks.extend(downlink.downlinks)
+
+                out = f"WARN: {far_name} split from {near_name}"
+                if affected:
+                    affected_s = ", ".join(sorted(affected))
+                    out += f" (took out {affected_s})"
+                await self._log(out)
+
+            elif (
+                p_netjoin := RE_NETJOIN.search(message)
+            ) is not None and self._has_links:
+
                 near_name = p_netjoin.group("near")
                 far_name = p_netjoin.group("far")
 
-                near = self._links[self._server_index(near_name)]
-                far = ServerDetails(far_name, near.hops + 1)
-                far.last_pong = datetime.utcnow()
+                await self._read_links()
+                await self._send_lusers()
 
-                self._links.append(far)
-                self._links.sort(key=attrgetter("hops", "name"))
+                far = self._servers[far_name]
+                far.last_pong = datetime.utcnow()
 
                 await self._log(f"INFO: {far_name} joined to {near_name}")
 
