@@ -43,7 +43,7 @@ def load(filepath: str):
         nickname,
         config_yaml.get("username", nickname),
         config_yaml.get("realname", nickname),
-        config_yaml.get("password", ""),
+        config_yaml.get("password", None),
         config_yaml["channel"],
         config_yaml.get("ignore", []),
         (config_yaml["sasl"]["username"], config_yaml["sasl"]["password"]),
