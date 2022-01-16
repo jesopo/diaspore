@@ -144,7 +144,7 @@ class Server(BaseServer):
                     downlink_name = downlinks.pop(0)
                     affected.add(downlink_name)
 
-                    downlink = self._servers[downlink_name]
+                    downlink = self._servers.pop(downlink_name)
                     downlinks.extend(downlink.downlinks)
 
                 out = f"WARN: {far_name} split from {near_name}"
