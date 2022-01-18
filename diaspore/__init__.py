@@ -77,7 +77,7 @@ class Server(BaseServer):
                     out += f" (seen {since:.2f}s ago)"
 
                 outs = [out]
-                affected_downlinks = self._get_downlinks(srver_name)
+                affected_downlinks = self._get_downlinks(server_name)
                 if affected_downlinks:
                     affected_downlinks_s = ", ".join(sorted(affected_downlinks))
                     outs.append(f"{server_name} downlinks: {affected_downlinks_s}")
