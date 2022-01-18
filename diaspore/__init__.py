@@ -128,11 +128,12 @@ class Server(BaseServer):
         elif line.command == "391" and line.source is not None:
             # RPL_TIME
             server = self._servers[line.source]
-            server.pings -= 1
             server.last_pong = datetime.utcnow()
 
-            if server.pings == 1:
+            if server.pings == WARN_THRESHOLD:
                 await self._log([f"INFO: {line.source} caught up"])
+
+            server.pings -= 1
 
         elif line.command == "265" and line.source is not None and self._has_links:
             # RPL_LOCALUSERS
