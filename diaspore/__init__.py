@@ -146,6 +146,7 @@ class Server(BaseServer):
             and line.params[0] == "*"
             and line.source is not None
             and not "!" in line.source
+            and line.source in self._servers
             and self.registered
         ):
 
