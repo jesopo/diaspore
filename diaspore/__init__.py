@@ -2,7 +2,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import datetime
 from re import compile as re_compile
-from typing import Dict, Optional, Set
+from typing import Dict, List, Optional, Set
 from typing import OrderedDict as TOrderedDict
 
 from irctokens import build, Line
@@ -17,6 +17,8 @@ RE_NETSPLIT = re_compile(r"^\*{3} Notice -- Netsplit (?P<near>\S+) <-> (?P<far>\
 RE_NETJOIN = re_compile(r"^\*{3} Notice -- Netjoin (?P<near>\S+) <-> (?P<far>\S+) ")
 RE_CLICONN = re_compile(r"^\*{3} Notice -- Client connecting: (?P<nick>\S+) ")
 RE_CLIEXIT = re_compile(r"^\*{3} Notice -- Client exiting: (?P<nick>\S+) ")
+
+WARN_THRESHOLD = 2
 
 
 @dataclass
@@ -43,23 +45,47 @@ class Server(BaseServer):
         # turn off throttling
         pass
 
-    async def _log(self, text: str):
-        await self.send(build("PRIVMSG", [self._config.channel, text]))
+    async def _log(self, outs: List[str]):
+        for out in outs:
+            await self.send(build("PRIVMSG", [self._config.channel, out]))
+
+    def _get_downlinks(self, server_name: str) -> List[str]:
+        downlinks: List[str] = []
+        downlink_i = 0
+        while downlink_i < len(downlinks):
+            downlink_name = downlinks[downlink_i]
+            downlink_i += 1
+            downlink = self._servers[downlink_name]
+            downlinks.extend(downlink.downlinks)
+        return downlinks
 
     async def _send_pings(self):
         now = datetime.utcnow()
-        for server_name, server in self._servers.items():
+        downlinks = list(next(iter(self._servers.values())).downlinks)
+        while downlinks:
+            server_name = downlinks.pop(0)
             if server_name in self._config.ignore:
                 continue
 
             await self.send(build("TIME", [server_name]))
 
-            if server.pings == 2:
-                out = f"WARN: {server_name} failed to check in twice"
+            server = self._servers[server_name]
+            if server.pings == WARN_THRESHOLD:
+                out = f"WARN: {server_name} failed to check in {WARN_THRESHOLD} times"
                 if server.last_pong is not None:
                     since = (now - server.last_pong).total_seconds()
                     out += f" (seen {since:.2f}s ago)"
-                await self._log(out)
+
+                outs = [out]
+                affected_downlinks = self._get_downlinks(srver_name)
+                if affected_downlinks:
+                    affected_downlinks_s = ", ".join(sorted(affected_downlinks))
+                    outs.append(f"{server_name} downlinks: {affected_downlinks_s}")
+
+                await self._log(outs)
+            elif server.pings < WARN_THRESHOLD:
+                downlinks.extend(server.downlinks)
+
             server.pings += 1
 
     async def _send_lusers(self):
@@ -106,7 +132,7 @@ class Server(BaseServer):
             server.last_pong = datetime.utcnow()
 
             if server.pings == 1:
-                await self._log(f"INFO: {line.source} caught up")
+                await self._log([f"INFO: {line.source} caught up"])
 
         elif line.command == "265" and line.source is not None and self._has_links:
             # RPL_LOCALUSERS
@@ -145,20 +171,15 @@ class Server(BaseServer):
                 far = self._servers.pop(far_name)
                 near.downlinks.remove(far_name)
 
-                affected: Set[str] = set()
-                downlinks = list(far.downlinks)
-                while downlinks:
-                    downlink_name = downlinks.pop(0)
-                    affected.add(downlink_name)
+                affected_downlinks = self._get_downlinks(far_name)
+                for downlink_name in affected_downlinks:
+                    del self._servers[downlink_name]
 
-                    downlink = self._servers.pop(downlink_name)
-                    downlinks.extend(downlink.downlinks)
-
-                out = f"WARN: {far_name} split from {near_name}"
-                if affected:
-                    affected_s = ", ".join(sorted(affected))
-                    out += f" (took out {affected_s})"
-                await self._log(out)
+                outs = [f"WARN: {far_name} split from {near_name}"]
+                if affected_downlinks:
+                    affected_downlinks_s = ", ".join(sorted(affected_downlinks))
+                    outs.append(f"{far_name} downlinks: {affected_downlinks_s}")
+                await self._log(outs)
 
             elif (
                 p_netjoin := RE_NETJOIN.search(message)
@@ -173,7 +194,14 @@ class Server(BaseServer):
                 far = self._servers[far_name]
                 far.last_pong = datetime.utcnow()
 
-                await self._log(f"INFO: {far_name} joined to {near_name}")
+                downlinks = self._get_downlinks(far_name)
+                downlinks_s = ", ".join(sorted(downlinks))
+                await self._log(
+                    [
+                        f"INFO: {far_name} joined to {near_name}",
+                        f"{far_name} downlinks: {downlinks_s}",
+                    ]
+                )
 
     def line_preread(self, line: Line):
         print(f"< {line.format()}")
