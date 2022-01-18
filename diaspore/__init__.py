@@ -47,6 +47,7 @@ class Server(BaseServer):
         await self.send(build("PRIVMSG", [self._config.channel, text]))
 
     async def _send_pings(self):
+        now = datetime.utcnow()
         for server_name, server in self._servers.items():
             if server_name in self._config.ignore:
                 continue
@@ -54,7 +55,11 @@ class Server(BaseServer):
             await self.send(build("TIME", [server_name]))
 
             if server.pings == 2:
-                await self._log(f"WARN: {server_name} failed to check in twice")
+                out = f"WARN: {server_name} failed to check in twice"
+                if server.last_pong is not None:
+                    since = (now - server.last_pong).total_seconds()
+                    out += f" (seen {since:.2f}s ago)"
+                await self._log(out)
             server.pings += 1
 
     async def _send_lusers(self):
