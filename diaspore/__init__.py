@@ -1,7 +1,9 @@
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import datetime
 from re import compile as re_compile
 from typing import Dict, Optional, Set
+from typing import OrderedDict as TOrderedDict
 
 from irctokens import build, Line
 from ircrobots import Bot as BaseBot
@@ -34,7 +36,7 @@ class Server(BaseServer):
         super().__init__(bot, name)
 
         self._config = config
-        self._servers: Dict[str, ServerDetails] = {}
+        self._servers: TOrderedDict[str, ServerDetails] = OrderedDict()
         self._has_links = False
 
     def set_throttle(self, rate: int, time: float):
