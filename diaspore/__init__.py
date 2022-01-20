@@ -78,9 +78,8 @@ class Server(BaseServer):
 
                 outs = [out]
                 affected_downlinks = self._get_downlinks(server_name)
-                if affected_downlinks:
-                    affected_downlinks_s = ", ".join(sorted(affected_downlinks))
-                    outs.append(f"{server_name} downlinks: {affected_downlinks_s}")
+                affected_downlinks_s = ", ".join(sorted(affected_downlinks))
+                outs.append(f"{server_name} downlinks: {affected_downlinks_s}")
 
                 await self._log(outs)
             elif server.pings < WARN_THRESHOLD:
