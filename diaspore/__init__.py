@@ -50,13 +50,16 @@ class Server(BaseServer):
             await self.send(build("PRIVMSG", [self._config.channel, out]))
 
     def _get_downlinks(self, server_name: str) -> List[str]:
-        downlinks: List[str] = []
-        downlink_i = 0
-        while downlink_i < len(downlinks):
-            downlink_name = downlinks[downlink_i]
-            downlink_i += 1
+        downlinks = [server_name]
+        i = 0
+        while i < len(downlinks):
+            downlink_name = downlinks[i]
             downlink = self._servers[downlink_name]
             downlinks.extend(downlink.downlinks)
+            i += 1
+
+        # first item is who we're asking for the downlinks for
+        downlinks.pop(0)
         return downlinks
 
     async def _send_pings(self):
