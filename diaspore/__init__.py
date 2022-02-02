@@ -130,10 +130,15 @@ class Server(BaseServer):
         elif line.command == "391" and line.source is not None:
             # RPL_TIME
             server = self._servers[line.source]
-            server.last_pong = datetime.utcnow()
 
             if server.pings == WARN_THRESHOLD:
-                await self._log([f"INFO: {line.source} caught up"])
+                out = f"INFO: {line.source} caught up"
+                if server.last_pong is not None:
+                    since = (datetime.utcnow() - server.last_pong).total_seconds()
+                    out += f" (gone for {since:.2f}s)"
+                await self._log([out])
+
+            server.last_pong = datetime.utcnow()
 
             server.pings -= 1
 
