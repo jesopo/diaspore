@@ -177,10 +177,10 @@ class Server(BaseServer):
                 far_name = p_netsplit.group("far")
 
                 near = self._servers[near_name]
-                far = self._servers.pop(far_name)
                 near.downlinks.remove(far_name)
 
                 affected_downlinks = self._get_downlinks(far_name)
+                del self._servers[far_name]
                 for downlink_name in affected_downlinks:
                     del self._servers[downlink_name]
 
