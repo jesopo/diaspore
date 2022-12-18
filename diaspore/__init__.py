@@ -26,6 +26,7 @@ class ServerDetails:
     hops: int
     pings: int = 0
     users: int = -1
+    warn: bool = False
 
     last_pong: Optional[datetime] = None
     last_conn: Optional[datetime] = None
@@ -74,6 +75,7 @@ class Server(BaseServer):
 
             server = self._servers[server_name]
             if server.pings == WARN_THRESHOLD:
+                server.warn = True
                 out = f"WARN: {server_name} failed to check in {WARN_THRESHOLD} times"
                 if server.last_pong is not None:
                     since = (now - server.last_pong).total_seconds()
@@ -85,7 +87,7 @@ class Server(BaseServer):
                 outs.append(f"{server_name} downlinks: {affected_downlinks_s}")
 
                 await self._log(outs)
-            elif server.pings < WARN_THRESHOLD:
+            elif not server.warn:
                 downlinks.extend(server.downlinks)
 
             server.pings += 1
@@ -137,9 +139,13 @@ class Server(BaseServer):
                 if server.last_pong is not None:
                     since = (datetime.utcnow() - server.last_pong).total_seconds()
                     out += f" (gone for {since:.2f}s)"
-                await self._log([out])
 
-            server.last_pong = datetime.utcnow()
+                server.warn = False
+                server.last_pong = datetime.utcnow()
+
+                await self._log([out])
+            elif not server.warn:
+                server.last_pong = datetime.utcnow()
 
         elif line.command == "265" and line.source is not None and self._has_links:
             # RPL_LOCALUSERS
