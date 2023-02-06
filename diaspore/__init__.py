@@ -2,7 +2,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import datetime
 from re import compile as re_compile
-from typing import Dict, List, Optional, Set
+from typing import List, Optional, Set
 from typing import OrderedDict as TOrderedDict
 
 from irctokens import build, Line
@@ -11,7 +11,7 @@ from ircrobots import Server as BaseServer
 from ircstates.numerics import RPL_WELCOME, RPL_YOUREOPER
 
 from .config import Config
-from .util import oper_up, read_links
+from .util import read_links
 
 RE_NETSPLIT = re_compile(r"^\*{3} Notice -- Netsplit (?P<near>\S+) <-> (?P<far>\S+) ")
 RE_NETJOIN = re_compile(r"^\*{3} Notice -- Netjoin (?P<near>\S+) <-> (?P<far>\S+) ")
@@ -117,8 +117,8 @@ class Server(BaseServer):
         if line.command == RPL_WELCOME and line.source is not None:
             self._servers[line.source] = ServerDetails(0)
             await self.send(build("MODE", [self.nickname, "+g"]))
-            oper_name, oper_file, oper_pass = self._config.oper
-            await oper_up(self, oper_name, oper_file, oper_pass)
+            oper_name, oper_pass = self._config.oper
+            await self.send(build("OPER", [oper_name, oper_pass]))
 
         elif line.command == RPL_YOUREOPER:
             # F - remote cliconns
